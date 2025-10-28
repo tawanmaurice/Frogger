@@ -1,170 +1,194 @@
-const timeLeftDisplay = document.querySelector('#time-left')
-const resultDisplay = document.querySelector('#result')
-const startPauseButton = document.querySelector('#start-pause-button')
-const squares = document.querySelectorAll('.grid div')
-const logsLeft = document.querySelectorAll('.log-left')
-const logsRight = document.querySelectorAll('.log-right')
-const carsLeft = document.querySelectorAll('.car-left')
-const carsRight = document.querySelectorAll('.car-right')
+// Refs
+const gridEl = document.getElementById('grid');
+const timeLeftEl = document.getElementById('time-left');
+const resultEl = document.getElementById('result');
+const livesEl = document.getElementById('lives');
+const startPauseBtn = document.getElementById('start-pause');
+const resetBtn = document.getElementById('reset');
 
-let currentIndex = 76
-const width = 9
-let timerId
-let outcomeTimerId
-let currentTime = 20
+// Constants
+const COLS = 9, ROWS = 9, SIZE = COLS * ROWS;
+const START_INDEX = 76;
+const GOAL_INDEX  = 4;
+const TICK_MS = 520;
+const TIME_LIMIT = 20;
+let lives = 3;
 
-function moveFrog(e) {
-    squares[currentIndex].classList.remove('frog')
-
-    switch(e.key) {
-        case 'ArrowLeft' :
-             if (currentIndex % width !== 0) currentIndex -= 1
-            break
-        case 'ArrowRight' :
-            if (currentIndex % width < width - 1) currentIndex += 1
-            break
-        case 'ArrowUp' :
-            if (currentIndex - width >=0 ) currentIndex -= width
-            break
-        case 'ArrowDown' :
-            if (currentIndex + width < width * width) currentIndex += width
-            break
-    }
-    squares[currentIndex].classList.add('frog')
+// Build grid
+let squares = [];
+for (let i = 0; i < SIZE; i++) {
+  const d = document.createElement('div');
+  squares.push(d);
+  gridEl.appendChild(d);
 }
 
-function autoMoveElements() {
-    currentTime--
-    timeLeftDisplay.textContent = currentTime
-    logsLeft.forEach(logLeft => moveLogLeft(logLeft))
-    logsRight.forEach(logRight => moveLogRight(logRight))
-    carsLeft.forEach(carLeft => moveCarLeft(carLeft))
-    carsRight.forEach(carRight => moveCarRight(carRight))
+// Lanes
+function rowRange(r){ return { start: r*COLS, end: r*COLS + (COLS-1) }; }
+const lanes = [
+  { row:0, type:'goal',  dir: 0 },
+  { row:1, type:'water', dir:+1 },
+  { row:2, type:'water', dir:-1 },
+  { row:3, type:'water', dir:+1 },
+  { row:4, type:'safe',  dir: 0 },
+  { row:5, type:'road',  dir:-1 },
+  { row:6, type:'road',  dir:+1 },
+  { row:7, type:'road',  dir:-1 },
+  { row:8, type:'safe',  dir: 0 },
+];
+
+lanes.forEach(({row, type})=>{
+  const {start} = rowRange(row);
+  for (let c=0;c<COLS;c++){
+    const i = start + c;
+    squares[i].className = '';
+    squares[i].classList.add(type);
+  }
+});
+squares[GOAL_INDEX].classList.add('goal');
+
+// Patterns
+function setPattern(row, className, pattern){
+  const {start} = rowRange(row);
+  for (let c=0;c<COLS;c++){
+    squares[start+c].classList.remove(className);
+    if (pattern[c % pattern.length]) squares[start+c].classList.add(className);
+  }
 }
 
-function checkOutComes() {
-    lose()
-    win()
+let patterns = {
+  logsR: [1,1,1,0,0,  1,1,0,0],
+  logsL: [1,1,1,0,  1,1,0,0,0],
+  carsR: [1,1,0,  0,1,1,0,  0],
+  carsL: [1,1,0,0,  1,0, 0,0,0]
+};
+
+setPattern(1,'log', patterns.logsR);
+setPattern(2,'log', patterns.logsL);
+setPattern(3,'log', patterns.logsR);
+setPattern(5,'car', patterns.carsL);
+setPattern(6,'car', patterns.carsR);
+setPattern(7,'car', patterns.carsL);
+
+// Frog
+let frogIndex = START_INDEX;
+squares[frogIndex].classList.add('frog');
+
+function indexToRC(i){ return { r: Math.floor(i/COLS), c: i%COLS }; }
+function rcToIndex(r,c){ return r*COLS + c; }
+
+function hopOnce(){
+  squares[frogIndex].classList.add('hop');
+  setTimeout(()=>squares[frogIndex].classList.remove('hop'), 140);
 }
 
-function moveLogLeft(logLeft) {
-    switch(true) {
-        case logLeft.classList.contains('l1') :
-            logLeft.classList.remove('l1')
-            logLeft.classList.add('l2')
-            break
-        case logLeft.classList.contains('l2') :
-            logLeft.classList.remove('l2')
-            logLeft.classList.add('l3')
-            break
-        case logLeft.classList.contains('l3') :
-            logLeft.classList.remove('l3')
-            logLeft.classList.add('l4')
-            break
-        case logLeft.classList.contains('l4') :
-            logLeft.classList.remove('l4')
-            logLeft.classList.add('l5')
-            break
-        case logLeft.classList.contains('l5') :
-            logLeft.classList.remove('l5')
-            logLeft.classList.add('l1')
-            break
-    }
+function moveFrog(e){
+  if (gameOver) return;
+  const {r,c} = indexToRC(frogIndex);
+  squares[frogIndex].classList.remove('frog');
+  if (e.key === 'ArrowLeft'  && c>0)        frogIndex--;
+  if (e.key === 'ArrowRight' && c<COLS-1)   frogIndex++;
+  if (e.key === 'ArrowUp'    && r>0)        frogIndex -= COLS;
+  if (e.key === 'ArrowDown'  && r<ROWS-1)   frogIndex += COLS;
+  squares[frogIndex].classList.add('frog');
+  hopOnce();
+  checkState();
 }
 
-function moveLogRight(logRight) {
-    switch(true) {
-        case logRight.classList.contains('l1') :
-            logRight.classList.remove('l1')
-            logRight.classList.add('l5')
-            break
-        case logRight.classList.contains('l2') :
-            logRight.classList.remove('l2')
-            logRight.classList.add('l1')
-            break
-        case logRight.classList.contains('l3') :
-            logRight.classList.remove('l3')
-            logRight.classList.add('l2')
-            break
-        case logRight.classList.contains('l4') :
-            logRight.classList.remove('l4')
-            logRight.classList.add('l3')
-            break
-        case logRight.classList.contains('l5') :
-            logRight.classList.remove('l5')
-            logRight.classList.add('l4')
-            break
-    }
+// Obstacles tick
+function shiftRow(row, cls, dir){
+  const {start} = rowRange(row);
+  const cells = [];
+  for (let i=0;i<COLS;i++) cells.push(squares[start+i].classList.contains(cls));
+  if (dir > 0) cells.unshift(cells.pop()); else cells.push(cells.shift());
+  for (let i=0;i<COLS;i++){
+    squares[start+i].classList.toggle(cls, cells[i]);
+  }
 }
 
-function moveCarLeft(carLeft) {
-    switch(true) {
-        case carLeft.classList.contains('c1') :
-            carLeft.classList.remove('c1')
-            carLeft.classList.add('c2')
-            break
-        case carLeft.classList.contains('c2') :
-            carLeft.classList.remove('c2')
-            carLeft.classList.add('c3')
-            break
-        case carLeft.classList.contains('c3') :
-            carLeft.classList.remove('c3')
-            carLeft.classList.add('c1')
-            break
-    }
-}
+function autoMove(){
+  [1,2,3].forEach(r => shiftRow(r,'log', lanes.find(l=>l.row===r).dir));
+  [5,6,7].forEach(r => shiftRow(r,'car', lanes.find(l=>l.row===r).dir));
 
-function moveCarRight(carRight) {
-    switch(true) {
-        case carRight.classList.contains('c1') :
-            carRight.classList.remove('c1')
-            carRight.classList.add('c3')
-            break
-        case carRight.classList.contains('c2') :
-            carRight.classList.remove('c2')
-            carRight.classList.add('c1')
-            break
-        case carRight.classList.contains('c3') :
-            carRight.classList.remove('c3')
-            carRight.classList.add('c2')
-            break
-    }
-}
-
-function lose() {
-    if (
-        squares[currentIndex].classList.contains('c1') ||
-        squares[currentIndex].classList.contains('l4') ||
-        squares[currentIndex].classList.contains('l5') ||
-        currentTime <= 0
-    ) {
-        resultDisplay.textContent = 'You lose!'
-        clearInterval(timerId)
-        clearInterval(outcomeTimerId)
-        squares[currentIndex].classList.remove('frog')
-        document.removeEventListener('keyup', moveFrog)
-    }
-}
-
-function win() {
-    if (squares[currentIndex].classList.contains('ending-block')) {
-        resultDisplay.textContent = 'You Win!'
-        clearInterval(timerId)
-        clearInterval(outcomeTimerId)
-        document.removeEventListener('keyup', moveFrog)
-    }
-}
-
-startPauseButton.addEventListener('click', () => {
-    if (timerId) {
-        clearInterval(timerId)
-        clearInterval(outcomeTimerId)
-        outcomeTimerId = null
-        timerId = null
-        document.removeEventListener('keyup', moveFrog)
+  const {r,c} = indexToRC(frogIndex);
+  if ([1,2,3].includes(r)){
+    const onLog = squares[frogIndex].classList.contains('log');
+    if (onLog){
+      const dir = lanes.find(l=>l.row===r).dir;
+      const newC = c + dir;
+      if (newC < 0 || newC >= COLS){
+        drown();
+      } else {
+        squares[frogIndex].classList.remove('frog');
+        frogIndex = rcToIndex(r, newC);
+        squares[frogIndex].classList.add('frog');
+      }
     } else {
-        timerId = setInterval(autoMoveElements, 1000)
-        outcomeTimerId = setInterval(checkOutComes, 50)
-        document.addEventListener('keyup', moveFrog)
+      drown();
     }
-})
+  }
+  checkState();
+}
+
+// Timer/state
+let tickTimer = null;
+let secondTimer = null;
+let timeLeft = TIME_LIMIT;
+let gameOver = false;
+
+function start(){
+  if (gameOver) return;
+  if (!tickTimer) tickTimer = setInterval(autoMove, TICK_MS);
+  if (!secondTimer) secondTimer = setInterval(()=>{
+    timeLeft--; timeLeftEl.textContent = timeLeft;
+    if (timeLeft <= 0) lose("Time's up!");
+  }, 1000);
+}
+function pause(){
+  clearInterval(tickTimer); tickTimer=null;
+  clearInterval(secondTimer); secondTimer=null;
+}
+function reset(){
+  pause(); gameOver=false; resultEl.textContent='';
+  squares.forEach(s => s.classList.remove('frog','danger'));
+  setPattern(1,'log', patterns.logsR);
+  setPattern(2,'log', patterns.logsL);
+  setPattern(3,'log', patterns.logsR);
+  setPattern(5,'car', patterns.carsL);
+  setPattern(6,'car', patterns.carsR);
+  setPattern(7,'car', patterns.carsL);
+  frogIndex = START_INDEX;
+  squares[frogIndex].classList.add('frog');
+  timeLeft = TIME_LIMIT; timeLeftEl.textContent = timeLeft;
+}
+function lose(msg){
+  if (gameOver) return;
+  lives--; livesEl.textContent = lives;
+  if (lives <= 0){
+    resultEl.textContent = 'YOU LOSE';
+    gameOver = true; pause();
+  } else {
+    resultEl.textContent = msg + ' (-1 life)';
+    setTimeout(()=>{ resultEl.textContent=''; }, 1200);
+    reset(); start();
+  }
+}
+function drown(){ lose('Drowned'); }
+function hitCar(){ lose('Squashed'); }
+
+function checkState(){
+  if (frogIndex === GOAL_INDEX){
+    resultEl.textContent = 'YOU WIN!'; gameOver = true; pause(); return;
+  }
+  if (squares[frogIndex].classList.contains('car')) hitCar();
+}
+
+// Events
+document.addEventListener('keydown', moveFrog);
+startPauseBtn?.addEventListener('click', ()=>{
+  if (tickTimer || secondTimer) pause(); else start();
+});
+resetBtn?.addEventListener('click', ()=>{ reset(); });
+
+// Init HUD
+timeLeftEl && (timeLeftEl.textContent = TIME_LIMIT);
+livesEl && (livesEl.textContent = lives);
